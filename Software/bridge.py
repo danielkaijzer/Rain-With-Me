@@ -163,7 +163,7 @@ def main():
                         message = json.dumps(unity_payload).encode()
                         sock.sendto(message, (UDP_IP, UDP_PORT))
                         
-                        print(f"BPM: {final_bpm} (Raw: {raw_pulse}) | Stress: {final_gsr} (Raw: {raw_gsr})")
+                        print(f"BPM: {final_bpm} (Raw: {raw_pulse}) | GSR (Processed): {final_gsr} (Raw: {raw_gsr})")
                         
                 except json.JSONDecodeError:
                     pass # Ignore partial/corrupt lines
