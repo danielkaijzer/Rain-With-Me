@@ -104,16 +104,16 @@ class BioProcessor:
         if range_span < 10:
             return 0
             
-        # 3. Calculate Relative Stress (0-100)
+        # 3. Calculate Relative GSR values (0-100)
         # "How close is the current value to the 'Wet' (Min) limit?"
-        # If Current == Min, Stress = 100. If Current == Max, Stress = 0.
-        stress_ratio = (max_val - raw_val) / range_span
+        # If Current == Min, gsr_processed = 100. If Current == Max, gsr_processed = 0.
+        gsr_processed = (max_val - raw_val) / range_span
         
         # Clamp to 0.0 - 1.0
-        stress_ratio = max(0.0, min(1.0, stress_ratio))
+        gsr_processed = max(0.0, min(1.0, gsr_processed))
         
         # Convert to 0-100 integer
-        return int(stress_ratio * 100)
+        return int(gsr_processed * 100)
 
 def main():
     # Setup UDP Socket
@@ -152,7 +152,7 @@ def main():
                         
                         # Process Data
                         final_bpm = processor.process_pulse(raw_pulse)
-                        stress_score = processor.process_gsr(raw_gsr)
+                        final_gsr = processor.process_gsr(raw_gsr)
 
                         unity_payload = {
                             "sensor_1": raw_gsr,  # Currently GSR
@@ -163,7 +163,7 @@ def main():
                         message = json.dumps(unity_payload).encode()
                         sock.sendto(message, (UDP_IP, UDP_PORT))
                         
-                        print(f"BPM: {final_bpm} (Raw: {raw_pulse}) | Stress: {stress_score} (Raw: {raw_gsr})")
+                        print(f"BPM: {final_bpm} (Raw: {raw_pulse}) | Stress: {final_gsr} (Raw: {raw_gsr})")
                         
                 except json.JSONDecodeError:
                     pass # Ignore partial/corrupt lines
