@@ -1,14 +1,22 @@
 import serial
 import json
 import time
+import socket
 
 # --- CONFIGURATION ---
-# REPLACE THIS with your actual port from the Arduino IDE (bottom right corner)
 SERIAL_PORT = "/dev/cu.usbmodem12134239842"  
 BAUD_RATE = 115200
 
+# Unity Connection Info
+UDP_IP = "127.0.0.1" # Localhost (Your computer)
+UDP_PORT = 5005      # The port Unity will listen to
+
 def main():
+    # Setup UDP Socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
     print(f"Connecting to Uno Q on {SERIAL_PORT}...")
+    print(f"Broadcasting to Unity on {UDP_IP}:{UDP_PORT}")
 
     try:
         # Open the Serial Port
@@ -20,24 +28,31 @@ def main():
         while True:
             if ser.in_waiting > 0:
                 try:
-                    # 1. Read the raw line from USB
+                    # Read the raw line from USB
                     raw_line = ser.readline().decode('utf-8').strip()
                     
-                    # 2. Filter out non-JSON noise (like boot messages)
+                    # Filter out non-JSON noise (like boot messages)
                     if raw_line.startswith("{") and raw_line.endswith("}"):
                         
-                        # 3. Parse the JSON
-                        data = json.loads(raw_line)
+                        # Parse the JSON
+                        arduino_data = json.loads(raw_line)
+
+                        sock.sendto(raw_line.encode(), (UDP_IP, UDP_PORT))
                         
-                        # 4. Extract Variables
-                        gsr = data.get("gsr", 0)
-                        pulse = data.get("pulse", 0)
+                        # Extract Variables (Will do some pre-processing on this later)
+                        val1 = arduino_data.get("gsr", 0)
+                        val2 = arduino_data.get("pulse", 0)
+
+                        unity_payload = {
+                            "sensor_1": val1,  # Currently GSR
+                            "sensor_2": val2   # Currently Pulse
+                        }
+
+                        # TRANSMIT: Send to Unity
+                        message = json.dumps(unity_payload).encode()
+                        sock.sendto(message, (UDP_IP, UDP_PORT))
                         
-                        # --- YOUR LOGIC GOES HERE ---
-                        # Example: Print nicely formatted data
-                        print(f"BPM Raw: {pulse} | GSR: {gsr}")
-                        
-                        # Next step: Send 'gsr' to Gemini API here!
+                        print(f"BPM Raw: {val2} | GSR: {val1}")
                         
                 except json.JSONDecodeError:
                     pass # Ignore partial/corrupt lines
