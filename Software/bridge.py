@@ -15,127 +15,105 @@ UDP_PORT = 5005      # The port Unity will listen to
 
 class BioProcessor:
     def __init__(self):
-        # SMOOTHING BUFFER
-        # self.smoothing_window = collections.deque(maxlen=15)
-
-        # PULSE SETTINGS
-        self.pulse_window = collections.deque(maxlen=200) # Smooth the raw signal
+        # 1. STRONG SMOOTHING (Moving Average)
+        # We average 5 samples to kill the jitter
+        self.raw_buffer = collections.deque(maxlen=5)
+        
+        # 2. ROLLING BASELINE (DC Offset)
+        # We track the average over 50 samples (approx 2.5s) to find the "Center Line"
+        self.baseline_buffer = collections.deque(maxlen=50)
+        
+        # 3. STATE MACHINE
         self.last_beat_time = time.time()
-        self.bpm_history = collections.deque(maxlen=10)   # Smooth the final BPM
-        self.current_bpm = 0
-        self.threshold = 0                               # Dynamic threshold
         self.beat_detected = False
+        
+        # 4. BPM SMOOTHING
+        # We keep the last 5 valid BPMs to prevent "88 -> 44 -> 88" jumps
+        self.bpm_history = collections.deque(maxlen=5)
 
-        # GSR SETTINGS
-        self.gsr_baseline = collections.deque(maxlen=100) # Slow baseline (approx 10s at 10Hz)
-        self.gsr_phasic = 0 # The immediate "Stress Spike"
-
+        start_bpm = 70
+        for _ in range(5):
+            self.bpm_history.append(start_bpm)
+        self.current_bpm = start_bpm
+        
+        # GSR
+        self.gsr_history = collections.deque(maxlen=500)
 
     def process_pulse(self, raw_val):
         current_time = time.time()
-        self.pulse_window.append(raw_val)
         
-        # We need at least 2 seconds of data to find the "Wave Height"
-        if len(self.pulse_window) < 40:
-            return self.current_bpm
-
-        # 1. FIND THE SIGNAL RANGE (Dynamic Amplitude)
-        # We look at the last 3 seconds to find the highest peak and lowest valley
-        local_min = min(self.pulse_window)
-        local_max = max(self.pulse_window)
-        amplitude = local_max - local_min
-
-        # 2. SET ADAPTIVE THRESHOLD
-        # We trigger a beat when the signal crosses 70% of the wave height
-        # Example: Low=7000, High=10000 -> Threshold = 9100
-        threshold = local_min + (amplitude * 0.7)
-
-        # 3. PEAK DETECTION
-        # Rule A: Signal is above the 70% mark
-        # Rule B: We haven't already counted this beat (beat_detected is False)
-        # Rule C: The wave is actually big enough (>300 units) to be a heartbeat, not noise
-        if raw_val > threshold and not self.beat_detected and amplitude > 300:
+        # RE-PROCESS: Smooth the raw input
+        self.raw_buffer.append(raw_val)
+        if len(self.raw_buffer) < 5: return self.current_bpm
+        smoothed = int(statistics.mean(self.raw_buffer))
+        
+        # TRACK BASELINE: Find the center of the wave
+        self.baseline_buffer.append(smoothed)
+        if len(self.baseline_buffer) < 20: return self.current_bpm
+        
+        baseline = statistics.mean(self.baseline_buffer)
+        
+        # THRESHOLD: We look for the signal crossing ABOVE the baseline
+        # We add a small offset (100 units) to avoid triggering on tiny noise
+        threshold = baseline + 100 
+        
+        # DETECTION LOGIC
+        # Rising Edge: Signal goes above threshold
+        if smoothed > threshold and not self.beat_detected:
             self.beat_detected = True
             
-            # Measure time since last beat
             delta_time = current_time - self.last_beat_time
             self.last_beat_time = current_time
             
-            # Filter: 40 BPM (1.5s) to 180 BPM (0.33s)
-            if 0.33 < delta_time < 1.5:
+            # BPM CALCULATION & FILTER
+            # We accept anything between 40 BPM (1.5s) and 200 BPM (0.3s)
+            if 0.3 < delta_time < 1.5:
                 instant_bpm = 60.0 / delta_time
                 self.bpm_history.append(instant_bpm)
                 
-                # Smooth the output (Average of last 5 valid beats)
+                # OUTPUT SMOOTHING
+                # We return the average of the last few beats
                 self.current_bpm = int(statistics.mean(self.bpm_history))
-                print(f"BEAT! BPM: {self.current_bpm} (Amp: {amplitude})")
+                
+                # Optional: Debug Print
+                print(f"BEAT! BPM: {self.current_bpm} (Interval: {delta_time:.2f}s)")
 
-        # 4. RESET
-        # We only reset the trigger when the signal drops below 50%
-        # This prevents "Double Counting" on the jittery peak
-        reset_threshold = local_min + (amplitude * 0.5)
-        if raw_val < reset_threshold:
+        # Falling Edge: Signal drops BELOW the baseline
+        # We require it to drop slightly below baseline to reset
+        if smoothed < baseline - 50:
             self.beat_detected = False
 
         return self.current_bpm
 
-
-    # def process_pulse(self, raw_val):
-    #     """
-    #     Converts Raw PPG Waveform -> BPM
-    #     Uses a simple dynamic threshold peak detector.
-    #     """
-    #     current_time = time.time()
-        
-    #     # 1. Smooth the noise
-    #     self.pulse_window.append(raw_val)
-
-    #     if len(self.pulse_window) < 50:
-    #         return 0
-        
-    #     # Calculate the 'DC Offset' (The average line)
-    #     baseline = statistics.mean(self.pulse_window)
-
-    #     # Peak Detection Logic
-    #     # If signal goes ABOVE threshold and we haven't seen a beat recently...
-    #     if raw_val > self.threshold and not self.beat_detected:
-    #         # We found a peak!
-    #         self.beat_detected = True
-            
-    #         # Calculate time difference
-    #         delta_time = current_time - self.last_beat_time
-    #         self.last_beat_time = current_time
-            
-    #         # Filter Logic: 40-200 BPM is valid
-    #         if 0.3 < delta_time < 1.5:
-    #             instant_bpm = 60.0 / delta_time
-    #             self.bpm_history.append(instant_bpm)
-    #             self.current_bpm = int(statistics.mean(self.bpm_history))
-
-    #     # Reset beat detection when signal falls back down
-    #     if raw_val < baseline:
-    #         self.beat_detected = False
-
-    #     return self.current_bpm
-
     def process_gsr(self, raw_val):
-        """
-        Converts Absolute Resistance -> Relative Stress Score
-        """
-        # 1. Update Baseline (Slowly)
-        self.gsr_baseline.append(raw_val)
-        baseline = statistics.mean(self.gsr_baseline)
+        # 1. Fill the History Buffer
+        self.gsr_history.append(raw_val)
         
-        # 2. Calculate Phasic Change (The Spike)
-        # For most GSR sensors: Lower Value = More Conductive = More Stress
-        # So: (High Baseline) - (Low Current) = Positive Stress Score
-        phasic_change = baseline - raw_val
-        
-        # 3. Simple Noise Gate
-        if abs(phasic_change) < 5: 
-            phasic_change = 0
+        # We need a few seconds of data before we can judge stress
+        if len(self.gsr_history) < 50:
+            return 0
             
-        return int(phasic_change)
+        # 2. Find the Dynamic Range (Over last 25 seconds)
+        # Note: In most circuits, High Value = Dry (Calm), Low Value = Wet (Stress)
+        max_val = max(self.gsr_history) # The Calmest you've been
+        min_val = min(self.gsr_history) # The Most Stressed you've been
+        
+        range_span = max_val - min_val
+        
+        # Avoid division by zero if flatline
+        if range_span < 10:
+            return 0
+            
+        # 3. Calculate Relative Stress (0-100)
+        # "How close is the current value to the 'Wet' (Min) limit?"
+        # If Current == Min, Stress = 100. If Current == Max, Stress = 0.
+        stress_ratio = (max_val - raw_val) / range_span
+        
+        # Clamp to 0.0 - 1.0
+        stress_ratio = max(0.0, min(1.0, stress_ratio))
+        
+        # Convert to 0-100 integer
+        return int(stress_ratio * 100)
 
 def main():
     # Setup UDP Socket
