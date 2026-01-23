@@ -52,7 +52,7 @@ def main():
                         message = json.dumps(unity_payload).encode()
                         sock.sendto(message, (UDP_IP, UDP_PORT))
                         
-                        print(f"BPM Raw: {val2} | GSR: {val1}")
+                        print(f"GSR: {val1} | BPM Raw: {val2}")
                         
                 except json.JSONDecodeError:
                     pass # Ignore partial/corrupt lines
