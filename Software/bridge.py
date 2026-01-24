@@ -1,4 +1,4 @@
-import serial
+import serial.tools.list_ports
 import json
 import time
 import socket
@@ -6,7 +6,6 @@ import collections
 import statistics
 
 # --- CONFIGURATION ---
-SERIAL_PORT = "/dev/cu.usbmodem12134239842"  
 BAUD_RATE = 115200
 
 # Unity Connection Info
@@ -115,20 +114,45 @@ class BioProcessor:
         # Convert to 0-100 integer
         return int(gsr_processed * 100)
 
+def find_serial_port():
+    """Automatically find the serial port for the Arduino."""
+    print("Searching for Arduino serial port...")
+    ports = list(serial.tools.list_ports.comports())
+    for p in ports:
+        # Look for common Arduino identifiers in the port device name or description
+        if "usbmodem" in p.device or "Arduino" in p.description or "CH340" in p.description or "Uno" in p.description:
+            print(f"Found Arduino on {p.device}")
+            return p.device
+    return None
+
 def main():
+    # Find the Arduino Port
+    serial_port = find_serial_port()
+    if not serial_port:
+        print("\nERROR: Could not find Arduino serial port.")
+        print("Please ensure the Arduino is connected to your computer.")
+        print("Available ports:")
+        ports = list(serial.tools.list_ports.comports())
+        if not ports:
+            print("  - None")
+        else:
+            for p in ports:
+                print(f"  - {p.device}: {p.description}")
+        return # Exit the script
+
     # Setup UDP Socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     # Setup the signal processing class
     processor = BioProcessor()
 
-    print(f"Connecting to Uno Q on {SERIAL_PORT}...")
+    print(f"Connecting to Uno Q on {serial_port}...")
     print(f"Broadcasting to Unity on {UDP_IP}:{UDP_PORT}")
 
     try:
         # Open the Serial Port
         # timeout=1 prevents the script from freezing if the board is silent
-        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+        ser = serial.Serial(serial_port, BAUD_RATE, timeout=1)
         time.sleep(2) # Wait for the connection to stabilize
         print("Connected! Waiting for data...")
 
@@ -171,7 +195,7 @@ def main():
                     pass # Ignore garbage characters
 
     except serial.SerialException as e:
-        print(f"\nERROR: Could not open {SERIAL_PORT}")
+        print(f"\nERROR: Could not open {serial_port}")
         print(" TIP: Is the Arduino IDE Serial Monitor still open? CLOSE IT!")
         print(f"Details: {e}")
     except KeyboardInterrupt:
