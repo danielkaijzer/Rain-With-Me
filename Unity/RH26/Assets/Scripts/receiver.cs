@@ -6,11 +6,11 @@ using System.Threading;
 
 public class BioReceiver : MonoBehaviour
 {
-    public int port = 5005;
-    
+    public int port = 5015;
+
     // Generic names allow you to pipe ANY data here later (GSR, Stress, HRV, etc.)
     [Header("Streamed Data")]
-    public float sensor_1; 
+    public float sensor_1;
     public float sensor_2;
 
     private UdpClient client;
@@ -42,10 +42,10 @@ public class BioReceiver : MonoBehaviour
             {
                 byte[] data = client.Receive(ref anyIP);
                 string text = Encoding.UTF8.GetString(data);
-                
+
                 // Fast JSON parsing
                 DataPacket packet = JsonUtility.FromJson<DataPacket>(text);
-                
+
                 sensor_1 = packet.sensor_1;
                 sensor_2 = packet.sensor_2;
             }

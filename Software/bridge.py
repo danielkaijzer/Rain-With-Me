@@ -10,7 +10,7 @@ BAUD_RATE = 115200
 
 # Unity Connection Info
 UDP_IP = "127.0.0.1" # Localhost (Your computer)
-UDP_PORT = 5005      # The port Unity will listen to
+UDP_PORT = 5015      # The port Unity will listen to
 
 class BioProcessor:
     def __init__(self):
@@ -127,7 +127,8 @@ def find_serial_port():
 
 def main():
     # Find the Arduino Port
-    serial_port = find_serial_port()
+    # serial_port = find_serial_port()
+    serial_port = "COM3"
     if not serial_port:
         print("\nERROR: Could not find Arduino serial port.")
         print("Please ensure the Arduino is connected to your computer.")
