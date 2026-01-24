@@ -1,55 +1,67 @@
-import serial
+import socket
 import json
 import time
+import serial
 
 # --- CONFIGURATION ---
-# Mac: ls /dev/tty.usbmodem* # Windows: Check Device Manager (COMx)
-SENSOR_PORT = '/dev/cu.usbmodem12134239842' # Arduino Uno Q (COM3)
-MOTOR_PORT = '/dev/cu.usbmodem101'  # The ESP32-S3 (COM4)
-BAUD_RATE   = 115200
+UDP_IP = "127.0.0.1"
+UDP_PORT = 5015
+MOTOR_PORT = '/dev/cu.usbmodem1101' 
+BAUD_RATE = 115200
 
-THRESHOLD_GSR = 500  # Adjust based on baseline
-COOLDOWN = 4.0       # Seconds between vibrations
+# Updates motor at most 10 times a second (10Hz) to prevent serial clogging
+UPDATE_RATE = 0.1 
 
 def main():
     try:
-        print(f"Connecting to Sensors on {SENSOR_PORT}...")
-        sensor_ser = serial.Serial(SENSOR_PORT, BAUD_RATE, timeout=1)
-        
-        print(f"Connecting to Motor on {MOTOR_PORT}...")
+        print(f"🔌 Connecting to Rain ESP32 on {MOTOR_PORT}...")
         motor_ser = serial.Serial(MOTOR_PORT, BAUD_RATE, timeout=1)
-        
-        print("✅ BRIDGE ACTIVE. Waiting for bio-data...")
-        
-        last_trigger_time = 0
-
-        while True:
-            # 1. Read line from Uno Q
-            if sensor_ser.in_waiting > 0:
-                raw_line = sensor_ser.readline().decode('utf-8').strip()
-                
-                # Filter out debug messages, look for JSON
-                if raw_line.startswith('{') and raw_line.endswith('}'):
-                    try:
-                        data = json.loads(raw_line)
-                        gsr_val = data.get('gsr', 0)
-                        pulse_val = data.get('pulse', 0)
-                        
-                        print(f"GSR: {gsr_val} | Pulse: {pulse_val}")
-
-                        # 2. Logic: If GSR spikes, trigger Motor
-                        if gsr_val > THRESHOLD_GSR:
-                            if time.time() - last_trigger_time > COOLDOWN:
-                                print(">>> TRIGGERING MOTOR! <<<")
-                                motor_ser.write(b'1') # Send '1' to ESP32
-                                last_trigger_time = time.time()
-                                
-                    except json.JSONDecodeError:
-                        pass # Ignore partial lines
-
+        time.sleep(2)
+        print("✅ Rain System Connected.")
     except serial.SerialException as e:
-        print(f"\n❌ Port Error: {e}")
-        print("Check your connections and port names.")
+        print(f"❌ Error: {e}")
+        return
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind((UDP_IP, UDP_PORT))
+    print(f"🌧️ Weather Station Active on UDP {UDP_PORT}")
+
+    last_update_time = 0
+
+    while True:
+        try:
+            data_bytes, addr = sock.recvfrom(1024) 
+            raw_json = data_bytes.decode('utf-8')
+
+            try:
+                data = json.loads(raw_json)
+                
+                # Get Normalized GSR (0.0 - 1.0)
+                # If your bridge sends 0-100 ints, divide by 100 here!
+                current_gsr = data.get("sensor_1", data.get("gsr", 0))
+                
+                # Rate Limit the Serial Writes
+                if time.time() - last_update_time > UPDATE_RATE:
+                    
+                    # DIRECT MAPPING: 0.0 -> 0, 1.0 -> 255
+                    intensity_float = max(0.0, min(1.0, float(current_gsr)))
+                    intensity_byte = int(intensity_float * 255)
+
+                    # Send to ESP32
+                    motor_ser.write(bytes([intensity_byte]))
+                    
+                    print(f"GSR: {intensity_float:.2f} -> Rain Intensity: {intensity_byte}")
+                    
+                    last_update_time = time.time()
+
+            except json.JSONDecodeError:
+                pass
+
+        except KeyboardInterrupt:
+            print("\nStopping...")
+            break
+        except Exception as e:
+            print(f"Error: {e}")
 
 if __name__ == "__main__":
     main()

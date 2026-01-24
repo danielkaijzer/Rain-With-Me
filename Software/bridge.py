@@ -36,7 +36,7 @@ class BioProcessor:
         self.current_bpm = start_bpm
         
         # GSR
-        self.gsr_history = collections.deque(maxlen=500)
+        self.gsr_history = collections.deque(maxlen=750)
 
     def process_pulse(self, raw_val):
         current_time = time.time()
@@ -112,7 +112,7 @@ class BioProcessor:
         gsr_processed = max(0.0, min(1.0, gsr_processed))
         
         # Convert to 0-100 integer
-        return int(gsr_processed * 100)
+        return round(gsr_processed, 2)
 
 def find_serial_port():
     """Automatically find the serial port for the Arduino."""
@@ -128,7 +128,7 @@ def find_serial_port():
 def main():
     # Find the Arduino Port
     # serial_port = find_serial_port()
-    serial_port = "COM3"
+    serial_port = "/dev/cu.usbmodem12134239842"
     if not serial_port:
         print("\nERROR: Could not find Arduino serial port.")
         print("Please ensure the Arduino is connected to your computer.")
@@ -169,7 +169,7 @@ def main():
                         # Parse the JSON
                         data = json.loads(raw_line)
 
-                        sock.sendto(raw_line.encode(), (UDP_IP, UDP_PORT))
+                        # sock.sendto(raw_line.encode(), (UDP_IP, UDP_PORT))
                         
                         #  Get Raw Data
                         raw_gsr = data.get("gsr", 0)
@@ -180,8 +180,8 @@ def main():
                         final_gsr = processor.process_gsr(raw_gsr)
 
                         unity_payload = {
-                            "sensor_1": raw_gsr,  # Currently GSR
-                            "sensor_2": raw_pulse   # Currently Pulse
+                            "sensor_1": final_gsr,  # Currently GSR
+                            "sensor_2": final_bpm   # Currently Pulse
                         }
 
                         # TRANSMIT: Send to Unity
