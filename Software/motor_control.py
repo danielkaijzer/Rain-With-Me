@@ -14,17 +14,17 @@ UPDATE_RATE = 0.1
 
 def main():
     try:
-        print(f"🔌 Connecting to Rain ESP32 on {MOTOR_PORT}...")
+        print(f"Connecting to Rain ESP32 on {MOTOR_PORT}...")
         motor_ser = serial.Serial(MOTOR_PORT, BAUD_RATE, timeout=1)
         time.sleep(2)
-        print("✅ Rain System Connected.")
+        print("ESP32 Connected.")
     except serial.SerialException as e:
         print(f"❌ Error: {e}")
         return
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((UDP_IP, UDP_PORT))
-    print(f"🌧️ Weather Station Active on UDP {UDP_PORT}")
+    print(f"Rain Simulator Active on UDP {UDP_PORT}")
 
     last_update_time = 0
 
@@ -45,6 +45,7 @@ def main():
                     
                     # DIRECT MAPPING: 0.0 -> 0, 1.0 -> 255
                     intensity_float = max(0.0, min(1.0, float(current_gsr)))
+                    # intensity_float = round(intensity_float * 20) / 20.0 # Optional to help with ramping 
                     intensity_byte = int(intensity_float * 255)
 
                     # Send to ESP32
