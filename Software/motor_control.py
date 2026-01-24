@@ -4,8 +4,8 @@ import time
 
 # --- CONFIGURATION ---
 # Mac: ls /dev/tty.usbmodem* # Windows: Check Device Manager (COMx)
-SENSOR_PORT = '/dev/cu.usbmodem12134239842' # Arduino Uno Q
-MOTOR_PORT = '/dev/cu.usbmodem101'  # The ESP32-S3
+SENSOR_PORT = '/dev/cu.usbmodem12134239842' # Arduino Uno Q (COM3)
+MOTOR_PORT = '/dev/cu.usbmodem101'  # The ESP32-S3 (COM4)
 BAUD_RATE   = 115200
 
 THRESHOLD_GSR = 500  # Adjust based on baseline
