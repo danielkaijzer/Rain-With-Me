@@ -5,8 +5,8 @@ import serial
 
 # --- CONFIGURATION ---
 UDP_IP = "127.0.0.1"
-UDP_PORT = 5015
-MOTOR_PORT = '/dev/cu.usbmodem1101' 
+UDP_PORT = 5006
+MOTOR_PORT = '/dev/cu.usbmodem101' 
 BAUD_RATE = 115200
 
 # Updates motor at most 10 times a second (10Hz) to prevent serial clogging

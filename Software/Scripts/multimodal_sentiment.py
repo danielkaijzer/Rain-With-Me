@@ -23,7 +23,7 @@ RECORD_SECONDS = 3
 
 # Unity Connection
 UDP_IP = "127.0.0.1"
-UDP_PORT = 5006
+UDP_PORT = 5015
 
 # --- SETUP GEMINI ---
 client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])

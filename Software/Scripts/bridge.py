@@ -1,48 +1,48 @@
-import os
 import time
 import json
 import socket
-import pyaudio
-import wave
-import cv2
 import threading
 import collections
 import statistics
+import serial
 import serial.tools.list_ports
-from google import genai
-from google.genai import types
 from dotenv import load_dotenv
 
 # --- CONFIGURATION ---
-load_dotenv()
-api_key = os.getenv('MY_API_KEY')
-os.environ["GOOGLE_API_KEY"] = str(api_key)
+# Unity (Where the final data goes)
+UNITY_IP = "127.0.0.1"
+UNITY_PORT = 5006  
 
-# Networking
-UDP_IP = "127.0.0.1"
-UDP_PORT = 5015  
+# Internal Link (Where we receive Gemini data from the other script)
+GEMINI_LISTENER_PORT = 5015
 
-# Audio Settings
-CHUNK = 1024
-FORMAT = pyaudio.paInt16
-CHANNELS = 1
-RATE = 44100
-RECORD_SECONDS = 3 
+# Unity Collision Listener Port
+UNITY_COLLISION_LISTENER_PORT = 5010
+
+# Distance Sensor Input (Where we listen for the float)
+DISTANCE_RX_PORT = 5020
+DISTANCE_THRESHOLD = 50.0
+
+# Where Motor Control Data goes
+MOTOR_IP = "127.0.0.1"
+MOTOR_PORT = 5012
 
 # Weights
 WEIGHT_GSR = 0.75
 WEIGHT_GEMINI = 0.25
 
 # --- SHARED GLOBAL STATE ---
-# These are read/written by different threads
 shared_state = {
     "gsr_arousal": 0.0,
     "bpm": 0,
     "gemini_arousal": 0.5,   # Default neutral
     "gemini_sentiment": 0.0,
-    "gemini_emotion": "Waiting...",
+    "gemini_emotion": "Waiting for AI...",
     "arduino_connected": False,
-    "running": True
+    "running": True,
+    # Motor state
+    "current_distance": 0.0,
+    "motor_status": "OFF"
 }
 
 # --- CLASS: BIO PROCESSOR ---
@@ -60,12 +60,8 @@ class BioProcessor:
 
         # GSR SETTINGS
         self.gsr_baseline_buffer = collections.deque(maxlen=200) 
-        
-        # --- TWEAK THESE TWO NUMBERS ---
-        self.min_peak = 15.0      # HIGHER = Less Sensitive (Needs bigger breath to hit 1.0)
-        self.smooth_factor = 0.1  # LOWER = Smoother/Slower (0.05 is very slow, 0.5 is fast)
-        # -------------------------------
-
+        self.min_peak = 15.0      
+        self.smooth_factor = 0.1  
         self.max_phasic_peak = self.min_peak
         self.last_arousal_output = 0.0
 
@@ -91,84 +87,104 @@ class BioProcessor:
         return self.current_bpm
 
     def process_gsr(self, raw_val):
-        # 1. Add to baseline buffer
+        # 1. Add to baseline buffer (The "Tonic" level)
         self.gsr_baseline_buffer.append(raw_val)
         if len(self.gsr_baseline_buffer) < 20: return 0.0
         
-        # 2. Calculate Baseline
         baseline = statistics.mean(self.gsr_baseline_buffer)
         
-        # 3. Calculate Phasic Drop
+        # 2. Calculate Phasic Drop (The "Spike")
         phasic_diff = baseline - raw_val
         if phasic_diff < 0: phasic_diff = 0
             
-        # 4. Auto-Scaling
-        self.max_phasic_peak *= 0.998 # Slow decay
+        # 3. Auto-Scaling with Limits
+        # CHANGE 1: Faster Decay (0.995) so the bar recovers its full range faster
+        self.max_phasic_peak *= 0.98
+        
+        # CHANGE 2: Hard Cap (100.0). Even if you have a massive spike (e.g. 500), 
+        # we treat it as 100. This prevents one huge moment from "breaking" the scale.
+        if self.max_phasic_peak > 100.0:
+            self.max_phasic_peak = 100.0
+
+        # Maintain the floor
         if self.max_phasic_peak < self.min_peak:
             self.max_phasic_peak = self.min_peak
 
+        # Expand if we hit a new high (up to the limit)
         if phasic_diff > self.max_phasic_peak:
             self.max_phasic_peak = phasic_diff
             
-        # 5. Raw Target Calculation
+        # 4. Normalize
         target_arousal = phasic_diff / self.max_phasic_peak
         target_arousal = max(0.0, min(1.0, target_arousal))
         
-        # 6. SMOOTHING (Lerp)
-        # Instead of jumping to the target, we slide towards it.
-        # New = Current + (Target - Current) * Factor
+        # 5. Smoothing
         self.last_arousal_output += (target_arousal - self.last_arousal_output) * self.smooth_factor
         
+        # DEBUG: Un-comment this if you want to see exactly why it's low
+        # print(f"DIFF: {phasic_diff:.1f} | CEILING: {self.max_phasic_peak:.1f} | OUT: {self.last_arousal_output:.2f}")
+
         return round(self.last_arousal_output, 3)
 
 # --- THREAD 1: ARDUINO LISTENER ---
 def arduino_loop(serial_port_name):
     print(f"🔌 Connecting to Biosensors on {serial_port_name}...")
     processor = BioProcessor()
-    
     try:
         ser = serial.Serial(serial_port_name, 115200, timeout=1)
         time.sleep(2)
         print("✅ Arduino Connected & Streaming.")
         shared_state["arduino_connected"] = True
-        
         while shared_state["running"]:
             if ser.in_waiting > 0:
                 try:
                     line = ser.readline().decode('utf-8').strip()
                     if line.startswith("{") and line.endswith("}"):
                         data = json.loads(line)
-                        
-                        # Process & Update Globals instantly
-                        bpm = processor.process_pulse(data.get("pulse", 0))
-                        gsr_norm = processor.process_gsr(data.get("gsr", 0))
-                        
-                        shared_state["bpm"] = bpm
-                        shared_state["gsr_arousal"] = gsr_norm
-                        
-                except Exception:
-                    pass
+                        shared_state["bpm"] = processor.process_pulse(data.get("pulse", 0))
+                        shared_state["gsr_arousal"] = processor.process_gsr(data.get("gsr", 0))
+                except Exception: pass
     except Exception as e:
         print(f"⚠️ Arduino Thread Error: {e}")
         shared_state["arduino_connected"] = False
 
-# --- THREAD 2: HIGH-SPEED UDP SENDER ---
-def udp_sender_loop():
+# --- THREAD 2: GEMINI LISTENER ---
+def gemini_listener_loop():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    print("🚀 High-Speed UDP Sender Active (20Hz)")
+    sock.bind(("127.0.0.1", GEMINI_LISTENER_PORT))
+    sock.settimeout(1.0) # Don't block forever
+    print(f"👂 Listening for AI updates on Port {GEMINI_LISTENER_PORT}...")
     
     while shared_state["running"]:
-        # 1. Grab latest values (Thread Safe-ish reading)
+        try:
+            data, _ = sock.recvfrom(1024) # Buffer size
+            packet = json.loads(data.decode())
+            
+            # Update the shared state with data from the other script
+            shared_state["gemini_arousal"] = packet.get("arousal", 0.5)
+            shared_state["gemini_sentiment"] = packet.get("sentiment", 0.5)
+            shared_state["gemini_emotion"] = packet.get("emotion", "Neutral")
+            
+        except socket.timeout:
+            continue # Just loop back and check "running"
+        except Exception as e:
+            print(f"Listener Error: {e}")
+
+# --- THREAD 3: UNITY SENDER (The Hub) ---
+def unity_sender_loop():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    print(f"Sending Fusion Data to Unity on {UNITY_PORT} (20Hz)")
+    
+    while shared_state["running"]:
         curr_gsr = shared_state["gsr_arousal"]
         curr_ai_arousal = shared_state["gemini_arousal"]
         
-        # 2. Calculate Fusion
+        # Calculate Fusion
         if shared_state["arduino_connected"]:
             final_arousal = (curr_gsr * WEIGHT_GSR) + (curr_ai_arousal * WEIGHT_GEMINI)
         else:
             final_arousal = curr_ai_arousal
 
-        # 3. Pack Payload
         packet = {
             "final_arousal": round(final_arousal, 2),
             "gemini_arousal": curr_ai_arousal,
@@ -178,119 +194,96 @@ def udp_sender_loop():
             "emotion": shared_state["gemini_emotion"]
         }
 
-        print(f"GSR: {curr_gsr} | Gemini Arousal: {curr_ai_arousal} | Final Arousal: {final_arousal} | BPM: {shared_state['bpm']} ")
-        
-        # 4. Send
-        try:
-            sock.sendto(json.dumps(packet).encode(), (UDP_IP, UDP_PORT))
-        except Exception as e:
-            print(f"UDP Error: {e}")
-            
-        # 5. Sleep briefly (20 times per second)
-        time.sleep(0.05)
+        # print(f"FUSION: {final_arousal:.2f} | GSR: {curr_gsr:.2f} | Gemini Arousal: {curr_ai_arousal:.2f} | {shared_state['gemini_emotion']}", end="\r")
+        status_msg = (
+            f"FUS:{final_arousal:.2f} | "
+            f"AI:{shared_state['gemini_emotion']} | "
+            f"DIST:{shared_state['current_distance']:.1f} | "
+            f"MOT:{shared_state['motor_status']}"
+        )
+        print(status_msg, end="\r")
 
-# --- MAIN THREAD: GEMINI LOGIC ---
+
+        try:
+            sock.sendto(json.dumps(packet).encode(), (UNITY_IP, UNITY_PORT))
+        except Exception: pass
+            
+        time.sleep(0.05) # 20Hz update rate
+
+def motor_sender_loop():
+    rx_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    rx_sock.bind(("0.0.0.0", DISTANCE_RX_PORT)) # 0.0.0.0 allows listening from external IPs too
+    rx_sock.settimeout(0.5)
+    
+    # 2. Setup Sender Socket (Outgoing Command)
+    tx_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    
+    print(f"📏 Listening for Distance on {DISTANCE_RX_PORT} -> Triggering Motor on {MOTOR_PORT}")
+
+    while shared_state["running"]:
+        try:
+            # Receive Data
+            data, _ = rx_sock.recvfrom(1024)
+            message = data.decode().strip()
+            
+            # Parse Float (Handle potential formatting issues)
+            try:
+                distance_val = float(message)
+                shared_state["current_distance"] = distance_val
+                
+                # Logic: If distance is LESS than threshold, turn ON
+                # (You can flip this to > if you want it to trigger when far away)
+                if distance_val < DISTANCE_THRESHOLD:
+                    command = "1" # Or "on"
+                    status = "ON"
+                else:
+                    command = "0" # Or "off"
+                    status = "OFF"
+                
+                shared_state["motor_status"] = status
+                
+                # Send Command to Motor Script
+                tx_sock.sendto(command.encode(), (MOTOR_IP, MOTOR_PORT))
+                
+            except ValueError:
+                # print(f"Motor Logic: Received non-float data: {message}")
+                pass
+                
+        except socket.timeout:
+            continue
+        except Exception as e:
+            print(f"Motor Loop Error: {e}")
+
+
+# --- MAIN ---
 def main():
     target_port = "/dev/cu.usbmodem12134239842" 
     
-    # Start Arduino Thread
+    # 1. Start Arduino Thread
     t_arduino = threading.Thread(target=arduino_loop, args=(target_port,), daemon=True)
     t_arduino.start()
 
-    # Start UDP Sender Thread
-    t_udp = threading.Thread(target=udp_sender_loop, daemon=True)
-    t_udp.start()
+    # 2. Start Gemini Listener Thread
+    t_listener = threading.Thread(target=gemini_listener_loop, daemon=True)
+    t_listener.start()
 
-    # Setup Gemini
-    client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+    # 3. Start Unity Sender Thread
+    t_unity_sender = threading.Thread(target=unity_sender_loop, daemon=True)
+    t_unity_sender.start()
+
+    # 4. Start Motor Control Sender Thread
+    t_motor_sender = threading.Thread(target=motor_sender_loop, daemon=True)
+    t_motor_sender.start()
+
+    print("--- FUSION ENGINE RUNNING ---")
+    print("Run 'multimodal_sentiment.py' in a separate terminal to enable AI.")
     
-    # Setup Cam
-    cap = None
-    for i in [0, 1, 2]:
-        c = cv2.VideoCapture(i)
-        if c.isOpened():
-            ret, f = c.read()
-            if ret and f.size > 0:
-                cap = c
-                break
-            c.release()
-            
-    if not cap:
-        print("No Webcam Found. Exiting.")
-        return
-
-    temp_audio = "fusion_voice.wav"
-    temp_image = "fusion_face.jpg"
-    
-    print(f"AI Engine Active. Weights -> GSR: {WEIGHT_GSR*100}% | Gemini: {WEIGHT_GEMINI*100}%")
-
     try:
         while True:
-            # --- PHASE 1: COLLECT DATA ---
-            # Audio
-            p = pyaudio.PyAudio()
-            stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
-            frames = []
-            
-            # Record for 3 seconds
-            for _ in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
-                frames.append(stream.read(CHUNK, exception_on_overflow=False))
-            stream.stop_stream()
-            stream.close()
-            p.terminate()
-            
-            with wave.open(temp_audio, 'wb') as wf:
-                wf.setnchannels(CHANNELS)
-                wf.setsampwidth(p.get_sample_size(FORMAT))
-                wf.setframerate(RATE)
-                wf.writeframes(b''.join(frames))
-            
-            # Visual (Snapshot) - NO POPUP WINDOW NOW
-            ret, frame = cap.read()
-            if ret: 
-                cv2.imwrite(temp_image, frame)
-
-            # --- PHASE 2: GEMINI INFERENCE ---
-            print(f"Analyzing... (Last BPM: {shared_state['bpm']})", end="\r")
-            
-            try:
-                uploaded_audio = client.files.upload(file=temp_audio)
-                uploaded_image = client.files.upload(file=temp_image)
-                
-                response = client.models.generate_content(
-                    model='gemini-2.0-flash',
-                    contents=[uploaded_audio, uploaded_image, "Analyze face and voice."],
-                    config=types.GenerateContentConfig(
-                        system_instruction="""
-                        Return JSON:
-                        {
-                            "sentiment": float, // 0.0 (Neg) to 1.0 (Pos)
-                            "arousal": float,   // 0.0 (Calm) to 1.0 (High Energy)
-                            "emotion": string   // e.g. "Stressed", "Happy"
-                        }
-                        """,
-                        response_mime_type="application/json"
-                    )
-                )
-                data = json.loads(response.text)
-                
-                # UPDATE SHARED STATE
-                # The UDP thread picks this up instantly in its next cycle
-                shared_state["gemini_arousal"] = data.get("arousal", 0.5)
-                shared_state["gemini_sentiment"] = data.get("sentiment", 0.5)
-                shared_state["gemini_emotion"] = data.get("emotion", "Neutral")
-                
-                print(f"✅ AI Update: {data.get('emotion')} | Arousal: {data.get('arousal')}    ")
-                
-            except Exception as e:
-                print(f"⚠️ Gemini Glitch: {e}")
-
+            time.sleep(1)
     except KeyboardInterrupt:
         print("\nStopping...")
         shared_state["running"] = False
-        cap.release()
-        if os.path.exists(temp_audio): os.remove(temp_audio)
-        if os.path.exists(temp_image): os.remove(temp_image)
 
 if __name__ == "__main__":
     main()
