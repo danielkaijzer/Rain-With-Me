@@ -6,12 +6,16 @@ using System.Threading;
 
 public class BioReceiver : MonoBehaviour
 {
-    public int port = 5005;
+    // Make sure this says 5006 in the INSPECTOR too!
+    public int port = 5006; 
     
-    // Generic names allow you to pipe ANY data here later (GSR, Stress, HRV, etc.)
-    [Header("Streamed Data")]
-    public float sensor_1; 
-    public float sensor_2;
+    [Header("Live Data")]
+    public float finalArousal; 
+    public float sentiment;    
+
+    [Header("Debug Info")]
+    public string connectionStatus = "Not Started";
+    public string lastPacket = "None";
 
     private UdpClient client;
     private Thread receiveThread;
@@ -20,36 +24,65 @@ public class BioReceiver : MonoBehaviour
     [System.Serializable]
     public class DataPacket
     {
-        public float sensor_1;
-        public float sensor_2;
+        public float final_arousal; 
+        public float sentiment;      
     }
 
     void Start()
     {
+        // 1. Start the thread
         receiveThread = new Thread(new ThreadStart(ReceiveData));
         receiveThread.IsBackground = true;
         receiveThread.Start();
+        
+        Debug.Log($"<color=yellow>BioReceiver: Attempting to start on Port {port}...</color>");
     }
 
     private void ReceiveData()
     {
-        client = new UdpClient(port);
-        IPEndPoint anyIP = new IPEndPoint(IPAddress.Any, 0);
-
-        while (isRunning)
+        try
         {
-            try
+            // 2. Open the Port
+            client = new UdpClient(port);
+            client.Client.ReceiveTimeout = 500; // Timeout so we don't freeze
+            IPEndPoint anyIP = new IPEndPoint(IPAddress.Any, 0);
+
+            // If we get here, the port is OPEN and working!
+            connectionStatus = $"Listening on {port}";
+            Debug.Log($"<color=green>BioReceiver: SUCCESS! Listening on Port {port}</color>");
+
+            while (isRunning)
             {
-                byte[] data = client.Receive(ref anyIP);
-                string text = Encoding.UTF8.GetString(data);
-                
-                // Fast JSON parsing
-                DataPacket packet = JsonUtility.FromJson<DataPacket>(text);
-                
-                sensor_1 = packet.sensor_1;
-                sensor_2 = packet.sensor_2;
+                try
+                {
+                    // 3. Wait for data
+                    byte[] data = client.Receive(ref anyIP);
+                    string text = Encoding.UTF8.GetString(data);
+                    
+                    // Update Debug Info
+                    lastPacket = text; 
+                    connectionStatus = "Receiving Data";
+
+                    // 4. Parse
+                    DataPacket packet = JsonUtility.FromJson<DataPacket>(text);
+                    finalArousal = packet.final_arousal;
+                    sentiment = packet.sentiment;
+                }
+                catch (SocketException) 
+                { 
+                    // This happens every 500ms if no data comes in. Normal behavior.
+                } 
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning("JSON Parse Error: " + ex.Message);
+                }
             }
-            catch (System.Exception) { /* Handle disconnects */ }
+        }
+        catch (System.Exception e)
+        {
+            // 5. IF YOU SEE THIS, THE PORT IS BLOCKED OR BUSY
+            connectionStatus = "ERROR: Port Busy";
+            Debug.LogError($"<color=red>BioReceiver FAILED: Could not open Port {port}. Is another Unity script using it?</color>");
         }
     }
 

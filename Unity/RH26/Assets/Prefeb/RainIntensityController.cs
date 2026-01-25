@@ -2,32 +2,36 @@ using UnityEngine;
 
 public class RainIntensityController : MonoBehaviour
 {
-    [Header("Target Particles")]
+    [Header("Connections")]
     public ParticleSystem rainSystem;
+    public BioReceiver bioDataReceiver;
 
-    [Header("Intensity Control")]
+    [Header("Data Mapping")]
+    // If your python sends 0.0-1.0, you can leave these as 0 and 1.
+    public float inputMin = 0;
+    public float inputMax = 1;
+
+    [Header("Debug")]
     [Range(0f, 1f)]
-    public float rainIntensity = 0.5f;
+    public float currentIntensity;
 
     [Header("Max Limits")]
-    public float maxEmission = 500f;
-
-    // We remove 'maxSpeed' because rain shouldn't get 10x faster
+    public float maxEmission = 1000f;
+    public float maxSpeed = 20f;
 
     void Update()
     {
-        if (rainSystem == null) return;
+        if (rainSystem == null || bioDataReceiver == null) return;
 
-        // 1. Change Amount (This is the density/heaviness)
+        // 1. Get the final_arousal value
+        float rawValue = bioDataReceiver.finalArousal;
+        Debug.Log("Cur rain value:" + rawValue);
+
+        // 2. Normalize (Ensure it stays 0.0 - 1.0)
+        currentIntensity = Mathf.InverseLerp(inputMin, inputMax, rawValue);
+
+        // 3. Apply to Rain Emission
         var emission = rainSystem.emission;
-        emission.rateOverTime = rainIntensity * maxEmission;
-
-        // 2. Change Gravity slightly (Heavy rain falls a bit straighter/harder)
-        var main = rainSystem.main;
-        // Smaller range (1 to 3) prevents it from looking like lasers
-        main.gravityModifier = Mathf.Lerp(1f, 3f, rainIntensity);
-
-        // OPTIONAL: Make drops slightly larger when heavy
-        // main.startSize = Mathf.Lerp(0.1f, 0.2f, rainIntensity);
+        emission.rateOverTime = currentIntensity * maxEmission;
     }
 }
