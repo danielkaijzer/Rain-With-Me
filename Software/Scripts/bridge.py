@@ -30,8 +30,8 @@ RATE = 44100
 RECORD_SECONDS = 3 
 
 # Weights
-WEIGHT_GSR = 0.6
-WEIGHT_GEMINI = 0.4
+WEIGHT_GSR = 0.75
+WEIGHT_GEMINI = 0.25
 
 # --- SHARED GLOBAL STATE ---
 # These are read/written by different threads
@@ -58,14 +58,18 @@ class BioProcessor:
         for _ in range(5): self.bpm_history.append(start_bpm)
         self.current_bpm = start_bpm
 
-        # GSR (Updated for Sensitivity)
+        # GSR SETTINGS
         self.gsr_baseline_buffer = collections.deque(maxlen=200) 
         
-        # CHANGED: Start much lower so small breaths register immediately
-        self.max_phasic_peak = 5.0 
+        # --- TWEAK THESE TWO NUMBERS ---
+        self.min_peak = 15.0      # HIGHER = Less Sensitive (Needs bigger breath to hit 1.0)
+        self.smooth_factor = 0.1  # LOWER = Smoother/Slower (0.05 is very slow, 0.5 is fast)
+        # -------------------------------
+
+        self.max_phasic_peak = self.min_peak
+        self.last_arousal_output = 0.0
 
     def process_pulse(self, raw_val):
-        # (Pulse logic remains the same)
         current_time = time.time()
         self.raw_buffer.append(raw_val)
         if len(self.raw_buffer) < 5: return self.current_bpm
@@ -91,34 +95,31 @@ class BioProcessor:
         self.gsr_baseline_buffer.append(raw_val)
         if len(self.gsr_baseline_buffer) < 20: return 0.0
         
-        # 2. Calculate baseline (Tonic)
+        # 2. Calculate Baseline
         baseline = statistics.mean(self.gsr_baseline_buffer)
         
-        # 3. Calculate Phasic (The Drop)
+        # 3. Calculate Phasic Drop
         phasic_diff = baseline - raw_val
-        
-        if phasic_diff < 0:
-            phasic_diff = 0
+        if phasic_diff < 0: phasic_diff = 0
             
-        # 4. Auto-Scaling with Faster Decay
-        # CHANGED: Decay faster (0.995) so the bar doesn't get stuck at 100%
-        self.max_phasic_peak *= 0.995 
-        
-        # CHANGED: Never let the max scale drop below 5.0 (Noise Floor)
-        if self.max_phasic_peak < 5.0:
-            self.max_phasic_peak = 5.0
+        # 4. Auto-Scaling
+        self.max_phasic_peak *= 0.998 # Slow decay
+        if self.max_phasic_peak < self.min_peak:
+            self.max_phasic_peak = self.min_peak
 
-        # Expand scale if we hit a new high
         if phasic_diff > self.max_phasic_peak:
             self.max_phasic_peak = phasic_diff
             
-        # 5. Normalize
-        arousal = phasic_diff / self.max_phasic_peak
+        # 5. Raw Target Calculation
+        target_arousal = phasic_diff / self.max_phasic_peak
+        target_arousal = max(0.0, min(1.0, target_arousal))
         
-        # OPTIONAL: Un-comment this to see the raw math in your console
-        # print(f"Raw: {raw_val} | Base: {baseline:.1f} | Diff: {phasic_diff:.1f} | Peak: {self.max_phasic_peak:.1f}")
+        # 6. SMOOTHING (Lerp)
+        # Instead of jumping to the target, we slide towards it.
+        # New = Current + (Target - Current) * Factor
+        self.last_arousal_output += (target_arousal - self.last_arousal_output) * self.smooth_factor
         
-        return max(0.0, min(1.0, arousal))
+        return round(self.last_arousal_output, 3)
 
 # --- THREAD 1: ARDUINO LISTENER ---
 def arduino_loop(serial_port_name):
@@ -177,7 +178,7 @@ def udp_sender_loop():
             "emotion": shared_state["gemini_emotion"]
         }
 
-        print(f"GSR: {curr_gsr} | Gemini Arousal: {curr_ai_arousal} | BPM: {shared_state['bpm']} ")
+        print(f"GSR: {curr_gsr} | Gemini Arousal: {curr_ai_arousal} | Final Arousal: {final_arousal} | BPM: {shared_state['bpm']} ")
         
         # 4. Send
         try:
@@ -221,7 +222,7 @@ def main():
     temp_audio = "fusion_voice.wav"
     temp_image = "fusion_face.jpg"
     
-    print(f"🧠 AI Engine Active. Weights -> GSR: {WEIGHT_GSR*100}% | Gemini: {WEIGHT_GEMINI*100}%")
+    print(f"AI Engine Active. Weights -> GSR: {WEIGHT_GSR*100}% | Gemini: {WEIGHT_GEMINI*100}%")
 
     try:
         while True:
