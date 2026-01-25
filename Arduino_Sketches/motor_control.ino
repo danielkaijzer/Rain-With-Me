@@ -112,10 +112,12 @@ void triggerDroplet(int intensity) {
     // Effect 10 "Double Click 100%" is punchy but has texture.
     drv.setWaveform(0, 10);  
   } 
-  else {
-    // TIER 1: DRIZZLE
-    // Effect 17 "Soft Bump" is subtle.
+  else if (intensity > 50)
+  {
     drv.setWaveform(0, 17); 
+  }
+  else {
+    drv.setWaveform(0, 0);
   }
   
   drv.setWaveform(1, 0); 

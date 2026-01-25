@@ -39,31 +39,25 @@ public class DistanceChecker : MonoBehaviour
         Vector3 rightPos = rightHand.position;
 
         // 2. Flatten the Y-axis (height) to ignore it
-        // We act as if everything is on the floor (y=0)
         myPos.y = 0;
         leftPos.y = 0;
         rightPos.y = 0;
 
-        // 3. Calculate Distances using the flattened vectors
+        // 3. Calculate Distances
         float leftDist = Vector3.Distance(myPos, leftPos);
         float rightDist = Vector3.Distance(myPos, rightPos);
 
-        Debug.Log($"Right: {rightDist} | Left: {leftDist}");
+        // 4. Find the closest distance (The "Threat" level)
+        // Since the Python script just needs to know "Is something close?", 
+        // we only need to send the smaller of the two numbers.
+        float closestDist = Mathf.Min(leftDist, rightDist);
 
-        // 4. Format the message
-        // Format: "Hand:Distance"
-        string messageLeft = $"Left:{leftDist:F2}";
-        string messageRight = $"Right:{rightDist:F2}";
+        Debug.Log($"Closest: {closestDist:F2}");
 
-        // 5. Send Data over UDP
-        SendString(messageLeft);
-        SendString(messageRight);
-
-        // 6. Logic Check (The "Vicinity" check)
-        if (leftDist < distanceThreshold || rightDist < distanceThreshold)
-        {
-            SendString("STATUS:IN_VICINITY");
-        }
+        // 5. Send raw data over UDP
+        // IMPORTANT: We send ONLY the number (e.g., "0.85"). 
+        // No "Left:" prefix, so Python can parse it immediately.
+        SendString(closestDist.ToString("F2"));
     }
 
     // Helper method to encode and send data

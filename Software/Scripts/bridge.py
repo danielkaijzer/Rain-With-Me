@@ -5,8 +5,6 @@ import threading
 import collections
 import statistics
 import serial
-import serial.tools.list_ports
-from dotenv import load_dotenv
 
 # --- CONFIGURATION ---
 # Unity (Where the final data goes)
@@ -16,12 +14,9 @@ UNITY_PORT = 5006
 # Internal Link (Where we receive Gemini data from the other script)
 GEMINI_LISTENER_PORT = 5015
 
-# Unity Collision Listener Port
-UNITY_COLLISION_LISTENER_PORT = 5010
-
 # Distance Sensor Input (Where we listen for the float)
-DISTANCE_RX_PORT = 5020
-DISTANCE_THRESHOLD = 50.0
+DISTANCE_RX_PORT = 5010
+DISTANCE_THRESHOLD = 0.2
 
 # Where Motor Control Data goes
 MOTOR_IP = "127.0.0.1"
@@ -196,8 +191,8 @@ def unity_sender_loop():
 
         # print(f"FUSION: {final_arousal:.2f} | GSR: {curr_gsr:.2f} | Gemini Arousal: {curr_ai_arousal:.2f} | {shared_state['gemini_emotion']}", end="\r")
         status_msg = (
-            f"BPM: {shared_state['bpm']}"
-            f"gsr_arousal:{round(curr_gsr, 2)}"
+            f"BPM: {shared_state['bpm']} | "
+            f"gsr_arousal:{round(curr_gsr, 2)} | "
             f"FUS:{final_arousal:.2f} | "
             f"AI:{shared_state['gemini_emotion']} | "
             f"DIST:{shared_state['current_distance']:.1f} | "
