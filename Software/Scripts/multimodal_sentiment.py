@@ -30,16 +30,16 @@ client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
 
 def find_working_camera():
     """Iterates through indices to find a camera that actually returns a frame."""
-    print("🔍 Searching for a working webcam...")
+    print("Searching for a working webcam...")
     for index in range(5): # Check indices 0 to 4
         cap = cv2.VideoCapture(index)
         if cap.isOpened():
             ret, frame = cap.read()
             if ret and frame is not None and frame.size > 0:
-                print(f"✅ Found working camera at Index {index}")
+                print(f"Found working camera at Index {index}")
                 return cap
             cap.release()
-    print("❌ No working webcam found!")
+    print("No working webcam found!")
     return None
 
 # --- INITIALIZE WEBCAM ---
@@ -51,7 +51,7 @@ def record_audio_chunk(filename):
     
     # Safety check for microphone
     if p.get_device_count() == 0:
-        print("❌ No microphone found.")
+        print("No microphone found.")
         return
 
     stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
@@ -86,11 +86,11 @@ def capture_frame(filename):
 
 def main():
     if cap is None:
-        print("🚫 Exiting: Camera initialization failed.")
+        print("Exiting: Camera initialization failed.")
         return
 
-    print(f"📡 Multimodal Sentiment Engine Active (Audio + Video)")
-    print(f"🌊 Sending to Unity on {UDP_IP}:{UDP_PORT}")
+    print(f"Multimodal Sentiment Engine Active (Audio + Video)")
+    print(f"Sending to Unity on {UDP_IP}:{UDP_PORT}")
     
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     temp_audio = "temp_voice.wav"
@@ -99,7 +99,7 @@ def main():
     try:
         while True:
             # 1. Capture Data
-            print("🎤 Recording & Watching...", end="\r")
+            print("Recording & Watching...", end="\r")
             
             # A. Record Audio
             record_audio_chunk(temp_audio)
@@ -115,7 +115,7 @@ def main():
 
             # 2. Analyze
             try:
-                print("🧠 Analyzing...           ", end="\r")
+                print("Analyzing...           ", end="\r")
                 
                 # Upload files
                 uploaded_audio = client.files.upload(file=temp_audio)
@@ -160,7 +160,7 @@ def main():
                 try:
                     data = json.loads(clean_text)
                 except json.JSONDecodeError:
-                    print(f"\n⚠️ JSON Parse Error. Raw: {clean_text}")
+                    print(f"\nJSON Parse Error. Raw: {clean_text}")
                     data = {"sentiment": 0.5, "arousal": 0.0, "dominant_emotion": "Error", "summary": "Parse Fail"}
                 
                 sentiment = data.get("sentiment", 0.5)
@@ -184,10 +184,10 @@ def main():
                 # if has_image: client.files.delete(name=uploaded_image.name)
                 
             except Exception as e:
-                print(f"\n⚠️ API Error: {e}")
+                print(f"\nAPI Error: {e}")
 
     except KeyboardInterrupt:
-        print("\n👋 Stopping Engine...")
+        print("\nStopping Engine...")
         if cap: cap.release()
         if os.path.exists(temp_audio): os.remove(temp_audio)
         if os.path.exists(temp_image): os.remove(temp_image)

@@ -38,7 +38,7 @@ def main():
                 
                 # Get Normalized GSR (0.0 - 1.0)
                 # If your bridge sends 0-100 ints, divide by 100 here!
-                current_gsr = data.get("sensor_1", data.get("gsr", 0))
+                current_gsr = data.get("final_arousal", data.get("final_arousal", 0))
                 
                 # Rate Limit the Serial Writes
                 if time.time() - last_update_time > UPDATE_RATE:
