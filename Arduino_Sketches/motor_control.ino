@@ -112,7 +112,7 @@ void triggerDroplet(int intensity) {
     // Effect 10 "Double Click 100%" is punchy but has texture.
     drv.setWaveform(0, 10);  
   } 
-  else if (intensity > 50)
+  else if (intensity > 1)
   {
     drv.setWaveform(0, 17); 
   }

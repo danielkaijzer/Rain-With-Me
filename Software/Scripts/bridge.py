@@ -231,10 +231,10 @@ def motor_sender_loop():
                 # Logic: If distance is LESS than threshold, turn ON
                 # (You can flip this to > if you want it to trigger when far away)
                 if distance_val < DISTANCE_THRESHOLD:
-                    command = "1" # Or "on"
+                    command = "ON" # Or "on"
                     status = "ON"
                 else:
-                    command = "0" # Or "off"
+                    command = "OFF" # Or "off"
                     status = "OFF"
                 
                 shared_state["motor_status"] = status
