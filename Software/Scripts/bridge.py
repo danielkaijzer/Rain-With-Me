@@ -12,7 +12,7 @@ UNITY_IP = "127.0.0.1"
 UNITY_PORT = 5006  
 
 # Internal Link (Where we receive Gemini data from the other script)
-GEMINI_LISTENER_PORT = 5015
+GEMINI_LISTENER_PORT = 5011
 
 # Distance Sensor Input (Where we listen for the float)
 DISTANCE_RX_PORT = 5010
