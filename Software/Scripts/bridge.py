@@ -196,6 +196,8 @@ def unity_sender_loop():
 
         # print(f"FUSION: {final_arousal:.2f} | GSR: {curr_gsr:.2f} | Gemini Arousal: {curr_ai_arousal:.2f} | {shared_state['gemini_emotion']}", end="\r")
         status_msg = (
+            f"BPM: {shared_state['bpm']}"
+            f"gsr_arousal:{round(curr_gsr, 2)}"
             f"FUS:{final_arousal:.2f} | "
             f"AI:{shared_state['gemini_emotion']} | "
             f"DIST:{shared_state['current_distance']:.1f} | "
@@ -257,7 +259,7 @@ def motor_sender_loop():
 
 # --- MAIN ---
 def main():
-    target_port = "/dev/cu.usbmodem12134239842" 
+    target_port = "COM3" 
     
     # 1. Start Arduino Thread
     t_arduino = threading.Thread(target=arduino_loop, args=(target_port,), daemon=True)
