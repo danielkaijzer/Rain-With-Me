@@ -15,7 +15,6 @@ public class DistanceChecker : MonoBehaviour
     [SerializeField] int port = 5010;
 
     [Header("References")]
-    [SerializeField] Transform leftHand;
     [SerializeField] Transform rightHand;
 
     // UDP Objects
@@ -24,7 +23,7 @@ public class DistanceChecker : MonoBehaviour
 
     void Start()
     {
-        // Initialize UDP Client once on Start to save performance
+        // Initialize UDP Client once
         udpClient = new UdpClient();
         remoteEndPoint = new IPEndPoint(IPAddress.Parse(ipAddress), port);
 
@@ -35,29 +34,20 @@ public class DistanceChecker : MonoBehaviour
     {
         // 1. Get positions
         Vector3 myPos = transform.position;
-        Vector3 leftPos = leftHand.position;
         Vector3 rightPos = rightHand.position;
 
-        // 2. Flatten the Y-axis (height) to ignore it
+        // 2. Flatten the Y-axis (height) to ignore vertical difference
         myPos.y = 0;
-        leftPos.y = 0;
         rightPos.y = 0;
 
-        // 3. Calculate Distances
-        float leftDist = Vector3.Distance(myPos, leftPos);
-        float rightDist = Vector3.Distance(myPos, rightPos);
+        // 3. Calculate Distance
+        // We no longer need Mathf.Min because there is only one hand to check.
+        float currentDistance = Vector3.Distance(myPos, rightPos);
 
-        // 4. Find the closest distance (The "Threat" level)
-        // Since the Python script just needs to know "Is something close?", 
-        // we only need to send the smaller of the two numbers.
-        float closestDist = Mathf.Min(leftDist, rightDist);
+        Debug.Log($"Distance to Right Hand: {currentDistance:F2}");
 
-        Debug.Log($"Closest: {closestDist:F2}");
-
-        // 5. Send raw data over UDP
-        // IMPORTANT: We send ONLY the number (e.g., "0.85"). 
-        // No "Left:" prefix, so Python can parse it immediately.
-        SendString(closestDist.ToString("F2"));
+        // 4. Send raw data over UDP
+        SendString(currentDistance.ToString("F2"));
     }
 
     // Helper method to encode and send data
@@ -74,7 +64,7 @@ public class DistanceChecker : MonoBehaviour
         }
     }
 
-    // IMPORTANT: Close the socket when the game stops or the script is destroyed
+    // Clean up socket on exit
     private void OnApplicationQuit()
     {
         if (udpClient != null)
