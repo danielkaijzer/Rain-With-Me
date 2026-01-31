@@ -2,7 +2,7 @@
 
 # Rain With Me 🌧️
 
-**Winner at MIT Reality Hack 2026** A real-time biometric empathy tool that translates emotional states into immersive AR environments and haptic feedback.
+**Winner at MIT Reality Hack 2026** A real-time biometric empathy tool that translates emotional states into immersive AR environments and haptic feedback. [**View Project on Devpost ↗**](https://devpost.com/software/rain-with-me)
 
 ## Overview
 Rain With Me uses real-time biometric data and AI to bridge the empathy gap between two users. By detecting a user's emotional state (arousal and valence), the system modulates a shared AR environment and provides physical haptic feedback to a second user, allowing them to "feel" the first person's internal emotional volatility.
@@ -81,4 +81,5 @@ graph TD
     classDef defaultNode fill:#FFFFFF,stroke:#333,stroke-width:2px,color:black;
     class Bio,Cam,Multi,Cloud,Broadcaster,MotorPy,Distance,Haptic defaultNode;
 ```
+
 
