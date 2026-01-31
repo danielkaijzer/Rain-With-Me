@@ -1,3 +1,5 @@
+[![MIT Reality Hack Winner](https://img.shields.io/badge/Winner-MIT%20Reality%20Hack%202026-FFD700?style=for-the-badge&logo=mit&logoColor=black)](https://hardmode.media.mit.edu/)
+
 # Rain With Me 🌧️
 
 **Winner at MIT Reality Hack 2026** A real-time biometric empathy tool that translates emotional states into immersive AR environments and haptic feedback.
@@ -78,8 +80,5 @@ graph TD
     %% Style for all other standard nodes to be white with black text
     classDef defaultNode fill:#FFFFFF,stroke:#333,stroke-width:2px,color:black;
     class Bio,Cam,Multi,Cloud,Broadcaster,MotorPy,Distance,Haptic defaultNode;
-    
-    style Bridge fill:#f9f,stroke:#333,stroke-width:2px
-    style Unity fill:#bbf,stroke:#333,stroke-width:2px
-    style ESP32 fill:#bfb,stroke:#333,stroke-width:2px
 ```
+
